@@ -1,0 +1,22 @@
+# --- Java & Maven ---
+**/target/
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+.mvn/
+
+# --- IDE (VS Code & Others) ---
+.vscode/
+.project
+.classpath
+.settings/
+*.iml
+*.ipr
+*.iws
+
+# --- OS & Miscellaneous ---
+.DS_Store
+Thumbs.db
+node_modules/
+
