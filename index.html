@@ -1,0 +1,629 @@
+<!DOCTYPE html> 
+<!--
+Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+Click nbfs://nbhost/SystemFileSystem/Templates/JSP_Servlet/Html.html to edit this template
+-->
+
+<html>
+    <head>
+        <title>Bucket List</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+
+        <style>
+            table {
+                border: 3px double black; 
+                border-collapse: collapse; 
+            }
+            
+            th, td {
+                border: 3px double black; 
+                padding: 5px; 
+            }
+
+
+            #objectsTable {
+                margin-top: 3px;
+            }
+
+
+            .table-btn {
+                width: 100%;
+                height: 100%;
+                display: block;    
+                box-sizing: border-box;    
+            }
+
+            
+            .auth-container {
+                margin-bottom: 10px;
+            }
+       
+            
+            input { margin-bottom: 5px; }
+
+        </style>
+
+
+    </head>
+
+
+
+    <body>
+
+        <div class="auth-container">
+            <label>email: </label>
+            <input type="text" id="email_input" placeholder="Enter email"> 
+            <button onclick="requestToken()">Get Token</button> 
+
+            <br>
+            
+            <label>token: </label>
+            <input type="text" id="token_input" placeholder=""> 
+            <button onclick="login()">Login</button>
+        </div>
+
+        <hr>
+        
+        <div>
+            <label for="description_input">description: </label>
+            <input type="text" id="description_input" placeholder="Type here..." 
+                   onclick="checkLoginForInput(event)" 
+                   onkeydown="checkLoginForInput(event)"> 
+            <br>
+            
+            <label for="file_input">file: </label>
+            <input type="file" id="file_input" onclick="checkLoginForInput(event)">
+            
+            <button id="upload_button" onclick="uploadObject()">Upload</button>
+        </div>
+
+        <hr>
+
+        <button onclick="handleListClick()">List</button>
+
+
+        <div>      
+            <table id="objectsTable">
+            </table>
+
+
+        </div>
+        <div>
+            <img src="" id="download_image">
+        </div>
+
+
+
+
+
+
+
+        <script>
+            // Define S3 Bucket names
+            const SOURCE_BUCKET_NAME = "ann-webapp-bucket"; 
+            const THUMBNAIL_BUCKET_NAME = "ann-resize-bucket"; 
+
+            const URL_GENERATE_TOKEN = "https://zdzgobnmkmuw6opnxkjgwkj6240bjdxy.lambda-url.us-east-1.on.aws/"; 
+            const URL_TOKEN_CHECKER = "https://2gbpb3fiuevvbvbnooiema2xza0mwrgq.lambda-url.us-east-1.on.aws/";
+            
+            // Check Login Status
+            let isLoggedIn = false;
+
+            function checkLoginForInput(event) {
+                if (!isLoggedIn) {
+                    event.preventDefault(); 
+                    alert("Please Login first!");
+                }
+            }
+
+            function getUserCredentials() {
+                 const email = document.getElementById("email_input").value;
+                 const token = document.getElementById("token_input").value;
+                 return { email, token };
+            }
+
+            // button 'Get Token' click handler  
+            async function requestToken() {
+                const email = document.getElementById("email_input").value;
+                const tokenInput = document.getElementById("token_input");
+
+                if (!email) { alert("Please enter email first"); return; }
+                try {
+                    // 
+                    const response = await fetch(URL_GENERATE_TOKEN, {
+                        method: 'POST',
+                        body: JSON.stringify({ email: email })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Print out the token to console & autofill the token 
+                        console.log("Token Response:", data);
+                        tokenInput.value = data.token;
+                        alert("The token has been successfully generated ! You can login now.");
+                    } else { 
+                        alert("Error generating token"); 
+                    }
+
+                } catch (e) { 
+                    console.log(e); 
+                    alert("Network error"); }
+            }
+
+            // button 'Login' click handler
+            async function login() {
+                const email = document.getElementById("email_input").value;
+                const token = document.getElementById("token_input").value;
+           
+                if (!email || !token) { alert("Please enter email and token"); return; }
+                try {
+                    const response = await fetch(URL_TOKEN_CHECKER, {
+                        method: 'POST',
+                        body: JSON.stringify({ email, token })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.valid) {
+                            isLoggedIn = true;
+                            alert("Login Successful! You can now use all features of the application.");
+                        } else {
+                            alert("Invalid Token!");
+                            isLoggedIn = false;
+                        }
+                    } else { 
+                        alert("Login failed"); 
+                        isLoggedIn = false; 
+                    }
+                } catch (e) { 
+                    console.log(e); 
+                    alert("Network error"); 
+                    isLoggedIn = false; 
+                }
+            }
+
+            // Handle List Button Click
+            function handleListClick() {
+                if (!isLoggedIn) { 
+                    alert("Please Login first!"); 
+                    return; 
+                }
+
+                fetchListOfObjects();
+            }
+
+
+
+
+
+
+            // A helper function to check if a file name (key) ends with common image extensions
+            function isImageFile(key) {
+            /* Define a Regular Expression (Regex) for image file extensions
+            \.              - Matches the dot "." before the extension.
+            (jpe?g|png|gif) - Matches "jpg", "jpeg", "png", or "gif" .
+            $               - Ensures these characters are at the END of the string.
+            /i              - Case-insensitive (for e.g, matches both .JPG and .jpg).
+            */    
+                const imageExtensions = /\.(jpe?g|png|gif)$/i;
+
+            // return true if the key matches image extensions    
+                return imageExtensions.test(key);
+            }
+
+
+
+
+
+            //  Disabled auto-call. User must use 'List' button after login.
+            // fetchListOfObjects();
+
+
+
+
+            // Render (Display) the List of objects into the table with Thumbnails, 'Download', and 'Delete' buttons
+            /* Converts raw JSON data from S3 into HTML table rows
+            (From Lambda) The JSON string response looks like : {"key":"a.jpg"}
+            */
+            function renderListOfObjects(listOfObjects) {
+                // Get the table element by its ID from the HTML
+                let objectsTable = document.getElementById("objectsTable");
+
+                /* Purpose: Clear all existing rows to prevent data duplication, 
+                How : It loops and removes the last child (row) until the table is empty. 
+
+                Why necessary :
+                If the table has 5 rows and we refresh the web page, without this loop, the table would display 10 rows.
+                */          
+                while (objectsTable.firstChild) {
+                    objectsTable.removeChild(objectsTable.lastChild);
+                }
+                
+                                                  
+                /* Parse the plain JSON strings (from Lambda) into a JavaScript array of objects, 
+                This is required so we can use a loop and access properties like .key for each file. */
+                let objectsArray = JSON.parse(listOfObjects);
+
+
+                // Loop through each object in the array to create table rows
+                for (let i = 0; i < objectsArray.length; i++) {
+                    // Get the file key (name) from the current object
+                    let key = objectsArray[i].S3Key;
+                    // Get the description 
+                    let description = objectsArray[i].Description;
+                    
+                    // Get Owner Email
+                    let ownerEmail = objectsArray[i].OwnerEmail || "N/A";
+                    
+                    // tr = table row ; create a new table row element
+                    let row = document.createElement("tr");
+
+
+                    
+                    //  Thumbnail Cell
+                    // Create a table cell for the thumbnail  ;; td = table data
+                    let thumbnailCell = document.createElement("td");
+                    // Assign a CSS class for styling
+                    thumbnailCell.className = "thumbnail-cell";
+
+                    // Recall the 'isImageFile' function, to check if a file is an image or not 
+                    if (isImageFile(key)) {
+                        // Create the URLs for the thumbnail and the full-size image
+                        const THUMBNAIL_URL = `https://${THUMBNAIL_BUCKET_NAME}.s3.amazonaws.com/resized-${key}`;
+                        const FULL_URL = `https://${SOURCE_BUCKET_NAME}.s3.amazonaws.com/${key}`;
+                        
+                        /* Create an anchor element <a> to open the full-size image in a new tab, 
+                        after clicked on the thumbnail
+                        */ 
+                        let thumbnailLink = document.createElement("a");
+                        thumbnailLink.href = FULL_URL;
+                        thumbnailLink.target = "_blank"; 
+
+                        // Create an image element <img> for the thumbnail
+                        let thumbnailImg = document.createElement("img");
+                        thumbnailImg.className = "thumbnail-img";
+                        thumbnailImg.src = THUMBNAIL_URL;
+                        thumbnailImg.alt = "Thumbnail"; 
+                        
+                        // Error Handle : If a thumbnail image fails to load, replace it with a default icon
+                        thumbnailImg.onerror = function() {
+                            this.onerror = null; 
+                            this.parentNode.innerHTML = `<span class="default-icon">📷</span>`;
+                        };
+
+                        // Nest the image <img> inside the link <a>, then add to the cell <td>
+                        thumbnailLink.appendChild(thumbnailImg);
+                        thumbnailCell.appendChild(thumbnailLink);
+
+                    } else {
+                        // Default icon for non-image files
+                        thumbnailCell.innerHTML = `<span class="default-icon">📄</span>`; 
+                    }
+                    // Append the thumbnail cell to the table row element
+                    row.appendChild(thumbnailCell); 
+                    
+                    
+                    
+
+                    // Create a cell for the File name + Description
+                    let descCell = document.createElement("td");
+                    if (description && description.trim() !== "") {
+                        descCell.textContent = description;
+                    } else {
+                        descCell.textContent = "No description"; 
+                    }
+                    row.appendChild(descCell);
+                    
+
+                    // Create a cell for Owner Email
+                    let emailCell = document.createElement("td");
+                    emailCell.textContent = ownerEmail; 
+                    row.appendChild(emailCell);
+
+
+                    // Create a cell for the 'Download' button
+                    let downloadCell = document.createElement("td");
+                    downloadCell.style.padding = "0"; 
+                    let downloadButton = document.createElement("button");
+                    downloadButton.className = "table-btn";
+                    /* When clicked on the 'Dowload' button, 
+                    it triggers the fetchObject() function to render the image 
+                    */
+                    downloadButton.addEventListener("click", function () {
+                        fetchObject(key)
+                    });
+                    downloadButton.innerHTML = "Download";
+                    downloadCell.appendChild(downloadButton);
+                     row.appendChild(downloadCell);
+                    
+                    
+
+                    // Create a cell for the 'Delete' button
+                    let deleteCell = document.createElement("td");
+                    deleteCell.style.padding = "0"; 
+                    let deleteButton = document.createElement("button");
+                    deleteButton.className = "table-btn";
+                    /* When clicked on the 'Delete' button, 
+                    it triggers the deleteObject() function to delete the image 
+                    */
+                    deleteButton.addEventListener("click", function () {
+                        deleteObject(key);
+                    });
+                    deleteButton.innerHTML = "Delete";
+                    deleteCell.appendChild(deleteButton);
+                    row.appendChild(deleteCell);
+                    
+            
+                    // Finally, append the completed row to the table        
+                    objectsTable.appendChild(row);
+                }
+            }
+
+
+
+
+
+            // Call the Lambda function to fetch the List of objects from S3
+            function fetchListOfObjects() {
+                if (!isLoggedIn) return; // Security Check
+
+                // The function URL of 'LambdaGetPhotosDB', 
+                // It acts as an API endpoint to connect to the S3 bucket.
+                let url = "https://ajlgquqegiube6we3g5kfxd7gu0jkaup.lambda-url.us-east-1.on.aws/"; 
+                
+                // Use the fetch() function to make an HTTP GET (default) request to the URL
+                fetch(url)
+                /* Handle the response from the server. 
+                If successful (status code 200), read the response.
+                If failed, stop & throw an error. 
+                */
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error, status = ${response.status}`);
+                            }
+                            return response.text();
+                        })
+                        // Call the renderListOfObjects() function 
+                        .then((text) => {
+                            renderListOfObjects(text);
+                        })
+                        // If network fails or any step above throws an error, jumps here
+                        .catch((error) => {
+                            console.log(`Error: ${error.message}`);
+                        });
+
+            }
+
+
+            
+            /* Workflow :
+            The function sends a PUT request to the Lambda function URL with the file key in the request body.
+            The Lambda function retrieves the object from S3 and returns it as a Blob (Binary Large Object).
+            The function then creates a temporary URL for the Blob and updates the 'download_image' element to display it.
+            */
+            
+            function fetchObject(key) {
+                // Security Check
+                if (!isLoggedIn) { alert("Please Login first!"); return; }
+                const creds = getUserCredentials();
+
+                const body = { 
+                    "key": key,
+                    "email": creds.email,
+                    "token": creds.token
+                };
+                let url = "https://lwaosztlhwxzcirfp5s3qqsqta0kruis.lambda-url.us-east-1.on.aws/";  // Url of LambdaGetObject
+
+                fetch(url,
+                        {
+                        /* Use PUT method to request the object.
+                        Reason : GET request cannot have a body, 
+                        but we need to send to lambda the 'key' in the request body to specify which object to fetch. 
+                        */   
+                            method: 'PUT',
+                            headers: { 
+                                'Content-Type': 'application/json' 
+                            },
+                        // the 'body' must be a string to be transmitted over HTTP     
+                        // Convert the JavaScript object to a JSON formatted string
+                            body: JSON.stringify(body)
+                        }
+                        )
+                        .then(response => {
+                            if (!response.ok) throw new Error("Fetch failed: " + response.status);
+                            return response.blob();
+                        })
+                        .then((myBlob) => {
+                            const objectURL = URL.createObjectURL(myBlob);
+                            const img_S3 = document.getElementById("download_image");
+                            img_S3.src = objectURL;
+                        })
+                        .catch(err => alert(err.message));
+            }
+
+
+
+            
+            /*
+            Workflow 
+            User Click on 'Delete' -> the function sends the DELETE request to the Lambda function on AWS. 
+            -> The Lambda function removes the corresponding object from buckets. 
+            -> In the case of a successful deletion, the function alerts the user & refresh the table.
+            */
+            function deleteObject(key) {
+                // Security Check
+                if (!isLoggedIn) { alert("Please Login first!"); return; }
+                const creds = getUserCredentials();
+                
+                let deleteUrl = "https://ruo5tppl3g3kasuk7sgns7jsr40gnojw.lambda-url.us-east-1.on.aws/"; // Url of LambdaSecureDeleteObject
+                
+                const body = { 
+                    "key": key,
+                    "email": creds.email,
+                    "token": creds.token
+                };
+                // confirm() method displays a dialog box with 'OK' & 'Cancel' buttons.
+                // If the user clicks 'Cancel', the function returns immediately (aborts).
+                if (!confirm(`Are you sure you want to delete file: ${key}?`)) {
+                    return; 
+                }
+
+                // Send the DELETE request to the Lambda function URL
+                fetch(deleteUrl, {
+                    
+                        method: 'DELETE', 
+                        headers: {
+                            // Specify that we are sending JSON data
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    })
+
+                    .then(response => {
+                        if (response.ok) {
+                            alert(`File ${key} deleted successfully!`);
+                            // Refresh the list after successful deletion
+                            fetchListOfObjects(); 
+                        } else {
+                            // Error Handling
+                            console.error(`Deletion failed for ${key}. Status: ${response.status}`);
+                            return response.json().then(data => { throw new Error(data.error || 'Unknown error'); });
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`Delete failed: ${error.message}`);
+                        alert(error.message);
+                    });
+            }
+
+
+
+
+
+            
+                
+            /*
+            Workflow
+            1. User selects a file & clicks 'Upload', which triggers the file validation check.
+            2. The 'FileReader' reads the binary file and converts it to a Data URL string. A JSON payload is constructed, 
+            and is sent via a POST request to the LambdaOrchestrator function URL.
+            3. Upon receiving the request, the LambdaOrchestrator delegates tasks to the corresponding Lambda functions.
+            4. The frontend receives the Orchestrator's response (Base64 encoded), then decodes it, and alerts 
+            the user of success/failure.
+            5. Finally, the function refreshes the object list to display the newly uploaded file. 
+            */
+            function uploadObject() {
+                // [NEW] Security Check
+                if (!isLoggedIn) { alert("Please Login first!"); return; }
+
+                // Get the file and description input elements
+                const fileInput = document.getElementById("file_input");
+                const descInput = document.getElementById("description_input");
+                const creds = getUserCredentials();
+
+                // Ensure a file is selected and get only the first selected file
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert("Choose a file first.");
+                    return;
+                }
+                // Get the description text (not provided = empty string)  
+                const description = descInput.value || "";
+
+
+
+                // Read the file content
+                // FileReader is a built-in API to read files asynchronously from the user's computer.
+                // asynchronous - let the browser continue other tasks while reading the file
+                const reader = new FileReader();
+
+                // onload - execute this function after the file is successfully read
+                reader.onload = function(evt) {
+                    // 'evt.target.result' contains the final file data converted into a Data URL string.
+                    // The format looks like: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA..."
+                    let dataUrl = evt.target.result;
+                
+                    // Extract the base64-encoded part from the Data URL
+                    let base64Index = dataUrl.indexOf(',') + 1;
+                    let base64 = dataUrl.substring(base64Index);
+
+                    
+                    const payload = {
+                        key: file.name,
+                        description: description,
+                        content: base64,
+                        email: creds.email, 
+                        token: creds.token
+                    };
+
+                    // URL of LambdaOrChestrator
+                    const uploadUrl = "https://gzhlemc6xqzioffq3wrxmitvb40adpsx.lambda-url.us-east-1.on.aws/";
+
+
+                    
+                    fetch(uploadUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    })
+
+                    
+                    // after getting the response from Lambda, check if the upload was successful
+                    .then(resp => {
+                        // if error, jump to the final catch block.
+                        if (!resp.ok) throw new Error("Upload failed status " + resp.status);
+                        // if success, print out the response text & continue the next step
+                        return resp.text();
+                    })
+                      
+                    // Process the response text
+                    .then(text => {
+                        
+                        try {
+                            /* 1. atob(text): Decodes Base64 back into a plain text JSON string.
+                            2. JSON.parse(decoded): Converts that string into a JavaScript Object.
+
+                            WHY step_2: A string is just "text" for display or transport. We need an "Object" to 
+                            access the data structure, allowing our code to read specific fields 
+                            (like json.activity1.success) to decide if the upload succeeded. 
+                            */                                  
+                            const decoded = atob(text);
+                            const json = JSON.parse(decoded);
+                            console.log(json);
+                            
+                            // Wait for a while, then refresh the list, to ensusre the thumbnail is displayed
+                            setTimeout(function() {
+                                fetchListOfObjects(); 
+                            }, 5000);
+
+                           // Handle the case where the response is not in the expected format 
+                        } catch (e) {
+                            console.log("Response:", text);
+                            setTimeout(function() {
+                                fetchListOfObjects(); 
+                            }, 2000);    
+                        }
+                    })
+                    
+                    .catch(err => {
+                        console.error(err);
+                        alert("Upload error: " + err.message);
+                    });
+                };
+                
+                /*
+                This line starts the file reading process.
+                When the reading finishes successfully, the browser 
+                automatically jumps back up and executes the 'reader.onload' function defined above.
+                */
+                // readAsDataURL(file) - reads the image file (in binary) & converts it into a Data URL string.
+                reader.readAsDataURL(file);              
+            }
+
+            
+
+        </script>
+    </body>
+
+</html>
