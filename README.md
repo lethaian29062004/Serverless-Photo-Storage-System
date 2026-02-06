@@ -7,7 +7,6 @@ A cloud-native application designed for storing and managing images using a serv
 * **Authentication:** Secure access requiring email and token-based login using HMAC-SHA256.
 * **Image Management:** Seamlessly upload, view, and delete images.
 * **Image Preview:** Instant preview and thumbnail generation (auto-resizing) for optimized browsing.
-* **Privacy Control:** User-controlled privacy settings (Public/Private modes) for each uploaded photo.
 * **Orchestration:** A central Lambda function coordinates tasks between S3 storage and the RDS MySQL database.
 
 ## Technology Used
