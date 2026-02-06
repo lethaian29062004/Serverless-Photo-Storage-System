@@ -18,7 +18,7 @@ A cloud-native application designed for storing and managing images using a serv
 **Infrastructure:** AWS Lambda (Serverless), Amazon S3 (Object Storage), Amazon RDS (MySQL), AWS SSM (Parameter Store), AWS Amplify.
 
 ## Project Structure
-```text
+```
 ./Serverless-Photo-Storage-System/
 │
 ├── LambdaGenerateToken/         # Generates secure HMAC tokens for user login
@@ -31,7 +31,7 @@ A cloud-native application designed for storing and managing images using a serv
 ├── index.html                   # Frontend interface (HTML/JavaScript/CSS)
 ├── .gitignore                   # Standard Git ignore rules for Java/Maven
 └── README.md                    # Project documentation
-
+```
 
 ## How To Use The Application
 
